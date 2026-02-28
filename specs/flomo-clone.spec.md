@@ -281,3 +281,43 @@ Note {
 - **Performance**: Note list renders within 200ms for up to 10,000 notes
 - **Responsive**: Desktop-first; mobile layout collapses sidebar into a drawer
 - **Theme**: Dark mode only (matching Flomo's dark palette: `#1a1a1a` background, `#2d5a3d` accent)
+
+---
+
+## Directory Structure
+
+```
+/
+├── server.js          # Express entry point
+├── index.html         # Vite SPA shell
+├── vite.config.js     # Vite build config (do not modify)
+├── package.json
+│
+├── src/               # 源代码
+│   ├── server/        # 后端 — Express 路由、中间件、DB
+│   │   ├── db.js
+│   │   ├── auth.js
+│   │   ├── routes/
+│   │   │   ├── auth.js
+│   │   │   ├── notes.js
+│   │   │   ├── tags.js
+│   │   │   └── upload.js
+│   │   └── middleware/
+│   │       ├── requireAuth.js
+│   │       └── errorHandler.js
+│   └── client/        # 前端 — Vite + 原生 JS
+│       ├── main.js
+│       ├── router.js
+│       ├── api.js
+│       ├── store.js
+│       ├── components/
+│       ├── pages/
+│       └── styles/
+│
+├── docs/              # 项目文档（设计文档由 AI Pipeline 生成）
+│   └── design-document.md
+│
+└── tests/             # 测试用例（Vitest）
+    ├── server/
+    └── client/
+```
