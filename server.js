@@ -4,6 +4,7 @@ import http from 'http';
 import { readdir, stat } from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PHOTOS_DIR = path.resolve(process.env.PHOTOS_DIR || './sample-photos');
@@ -29,6 +30,48 @@ let photoTags = [];   // { photo_id, tag_id }
 let nextPhotoId = 1;
 let nextAlbumId = 1;
 let nextTagId = 1;
+
+// --- Notes store ---
+export const notes = [];
+export const noteTags = new Map(); // tagName → Set<noteId>
+
+export function resetNoteStore() {
+  notes.length = 0;
+  noteTags.clear();
+}
+
+function generateNoteId() {
+  return 'n_' + randomUUID().replace(/-/g, '').slice(0, 6);
+}
+
+function findNote(id) { return notes.find(n => n.id === id); }
+
+function normalizeTag(tag) {
+  return String(tag).trim().toLowerCase();
+}
+
+function addToNoteTagIndex(noteId, tag) {
+  if (!noteTags.has(tag)) noteTags.set(tag, new Set());
+  noteTags.get(tag).add(noteId);
+}
+
+function removeFromNoteTagIndex(noteId, tag) {
+  const set = noteTags.get(tag);
+  if (set) {
+    set.delete(noteId);
+    if (set.size === 0) noteTags.delete(tag);
+  }
+}
+
+function toNoteResponse(n) {
+  return {
+    id: n.id,
+    content: n.content,
+    tags: [...n.tags],
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+  };
+}
 
 function findPhoto(id) { return photos.find(p => p.id === id); }
 function findAlbum(id) { return albums.find(a => a.id === id); }
@@ -153,11 +196,26 @@ app.delete('/api/photos/:id/tags/:tagName', (req, res) => {
 });
 
 app.get('/api/tags', (_req, res) => {
-  const result = tags.map(t => ({
-    id: t.id,
-    name: t.name,
-    photo_count: photoTags.filter(pt => pt.tag_id === t.id).length,
-  }));
+  // Build photo tag map keyed by lowercase name
+  const photoTagMap = new Map();
+  for (const t of tags) {
+    photoTagMap.set(t.name.toLowerCase(), {
+      name: t.name,
+      photoCount: photoTags.filter(pt => pt.tag_id === t.id).length,
+    });
+  }
+
+  // Merge all tag names from photos and notes
+  const allTagNames = new Set([...photoTagMap.keys(), ...noteTags.keys()]);
+  const result = [...allTagNames].map(name => {
+    const photoEntry = photoTagMap.get(name);
+    return {
+      name: photoEntry ? photoEntry.name : name,
+      noteCount: noteTags.has(name) ? noteTags.get(name).size : 0,
+      photoCount: photoEntry ? photoEntry.photoCount : 0,
+    };
+  });
+
   res.json({ tags: result });
 });
 
@@ -245,6 +303,131 @@ app.delete('/api/albums/:id/photos/:photoId', (req, res) => {
   res.status(204).end();
 });
 
+// --- Note routes ---
+
+app.get('/api/notes', (req, res) => {
+  let result = [...notes];
+  const { tag, search, sort = 'createdAt', order = 'desc', page = '1', limit = '20' } = req.query;
+
+  if (tag) {
+    const normalized = tag.toLowerCase();
+    const ids = noteTags.get(normalized);
+    result = ids ? result.filter(n => ids.has(n.id)) : [];
+  }
+
+  if (search) {
+    const s = search.toLowerCase();
+    result = result.filter(n => n.content.toLowerCase().includes(s));
+  }
+
+  result.sort((a, b) => {
+    const field = sort === 'updatedAt' ? 'updatedAt' : 'createdAt';
+    const cmp = a[field].localeCompare(b[field]);
+    return order === 'asc' ? cmp : -cmp;
+  });
+
+  const total = result.length;
+  const p = parseInt(page);
+  const l = Math.min(parseInt(limit), 100);
+  const paginated = result.slice((p - 1) * l, p * l);
+
+  res.json({ notes: paginated.map(toNoteResponse), total, page: p, limit: l });
+});
+
+app.post('/api/notes', (req, res) => {
+  const { content, tags: rawTags = [] } = req.body;
+  if (!content || !content.trim()) {
+    return res.status(400).json({ error: 'content is required' });
+  }
+  if (!Array.isArray(rawTags)) {
+    return res.status(400).json({ error: 'tags must be an array' });
+  }
+
+  const normalizedTags = [...new Set(rawTags.map(normalizeTag).filter(t => t.length > 0))];
+  for (const t of normalizedTags) {
+    if (t.length > 32) {
+      return res.status(400).json({ error: `Tag "${t}" exceeds 32 characters` });
+    }
+  }
+  if (normalizedTags.length > 10) {
+    return res.status(400).json({ error: 'Tag limit exceeded: a note can have at most 10 tags' });
+  }
+
+  const now = new Date().toISOString();
+  const note = { id: generateNoteId(), content: content.trim(), tags: normalizedTags, createdAt: now, updatedAt: now };
+  notes.push(note);
+  for (const t of normalizedTags) addToNoteTagIndex(note.id, t);
+
+  res.status(201).json(toNoteResponse(note));
+});
+
+app.patch('/api/notes/:id', (req, res) => {
+  const note = findNote(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+
+  const { content } = req.body;
+  if (content !== undefined) {
+    if (!content.trim()) return res.status(400).json({ error: 'content cannot be empty' });
+    note.content = content.trim();
+  }
+  note.updatedAt = new Date().toISOString();
+  res.json(toNoteResponse(note));
+});
+
+app.delete('/api/notes/:id', (req, res) => {
+  const idx = notes.findIndex(n => n.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Note not found' });
+  const note = notes[idx];
+  for (const t of note.tags) removeFromNoteTagIndex(note.id, t);
+  notes.splice(idx, 1);
+  res.status(204).end();
+});
+
+// --- Note tag sub-resource routes ---
+
+app.post('/api/notes/:id/tags', (req, res) => {
+  const note = findNote(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+
+  const { tags: rawTags } = req.body;
+  if (!Array.isArray(rawTags)) return res.status(400).json({ error: 'tags must be an array' });
+
+  const incoming = [...new Set(rawTags.map(normalizeTag).filter(t => t.length > 0))];
+  for (const t of incoming) {
+    if (t.length > 32) {
+      return res.status(400).json({ error: `Tag "${t}" exceeds 32 characters` });
+    }
+  }
+
+  const newTags = incoming.filter(t => !note.tags.includes(t));
+  if (note.tags.length + newTags.length > 10) {
+    return res.status(400).json({ error: 'Tag limit exceeded: a note can have at most 10 tags' });
+  }
+
+  for (const t of newTags) {
+    note.tags.push(t);
+    addToNoteTagIndex(note.id, t);
+  }
+  note.updatedAt = new Date().toISOString();
+  res.json(toNoteResponse(note));
+});
+
+app.delete('/api/notes/:id/tags/:tag', (req, res) => {
+  const note = findNote(req.params.id);
+  if (!note) return res.status(404).json({ error: 'Note not found' });
+
+  const tagName = normalizeTag(decodeURIComponent(req.params.tag));
+  const idx = note.tags.indexOf(tagName);
+  if (idx === -1) {
+    return res.status(404).json({ error: `Tag '${tagName}' not found on this note` });
+  }
+
+  note.tags.splice(idx, 1);
+  removeFromNoteTagIndex(note.id, tagName);
+  note.updatedAt = new Date().toISOString();
+  res.json(toNoteResponse(note));
+});
+
 // --- Scan endpoint ---
 
 async function scanDirectory(dir, relativeTo) {
@@ -325,22 +508,27 @@ app.post('/api/scan', async (_req, res) => {
 // --- Serve photos ---
 app.use('/photos', express.static(PHOTOS_DIR));
 
-// --- Vite integration ---
-if (isProd) {
-  app.use(express.static(path.join(__dirname, 'dist')));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+// --- Vite integration and server start (only when run directly) ---
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
+  if (isProd) {
+    app.use(express.static(path.join(__dirname, 'dist')));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    });
+  } else {
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: { middlewareMode: true, hmr: { server: httpServer } },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  }
+
+  httpServer.listen(PORT, HOST, () => {
+    console.log(`Photo Album Organizer running at http://${HOST}:${PORT}`);
+    console.log(`Photos directory: ${PHOTOS_DIR}`);
   });
-} else {
-  const { createServer: createViteServer } = await import('vite');
-  const vite = await createViteServer({
-    server: { middlewareMode: true, hmr: { server: httpServer } },
-    appType: 'spa',
-  });
-  app.use(vite.middlewares);
 }
 
-httpServer.listen(PORT, HOST, () => {
-  console.log(`Photo Album Organizer running at http://${HOST}:${PORT}`);
-  console.log(`Photos directory: ${PHOTOS_DIR}`);
-});
+export { app };
