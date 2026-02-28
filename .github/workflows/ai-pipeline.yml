@@ -92,6 +92,14 @@ jobs:
       - name: Create feature branch
         run: git checkout -b "${{ env.FEATURE_BRANCH }}"
 
+      - name: Verify ANTHROPIC_API_KEY is set
+        run: |
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it at: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is configured."
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -118,7 +126,8 @@ jobs:
           (3) API / interface definitions, \
           (4) Data models and schemas, \
           (5) Implementation roadmap with task breakdown." \
-            --allowedTools "Bash,Edit,Read,Write"
+            --allowedTools "Bash,Edit,Read,Write" \
+            --dangerously-skip-permissions
 
       # ── Step 2: Implementation ───────────────────────────────────────────
       - name: "SDD Step 2 · Implement Code"
@@ -132,7 +141,8 @@ jobs:
           features and components described in the design. \
           Follow existing project conventions, write clean production-ready code \
           with proper error handling. Create or update files as needed." \
-            --allowedTools "Bash,Edit,Read,Write"
+            --allowedTools "Bash,Edit,Read,Write" \
+            --dangerously-skip-permissions
 
       # ── Step 3: Tests ────────────────────────────────────────────────────
       - name: "SDD Step 3 · Write Test Cases"
@@ -148,7 +158,8 @@ jobs:
           (3) Edge cases and error scenario coverage. \
           Follow the project's existing test framework, naming conventions, \
           and directory structure." \
-            --allowedTools "Bash,Edit,Read,Write"
+            --allowedTools "Bash,Edit,Read,Write" \
+            --dangerously-skip-permissions
 
       - name: Commit and push to feature branch
         run: |
@@ -285,7 +296,8 @@ jobs:
           (3) Fix failing tests (correct implementation or test expectations as needed). \
           Make minimal, targeted changes only. \
           Do not refactor unrelated code or add new features." \
-            --allowedTools "Bash,Edit,Read,Write"
+            --allowedTools "Bash,Edit,Read,Write" \
+            --dangerously-skip-permissions
 
           echo "" >> "$REPORT"
           echo "Auto-fix complete." >> "$REPORT"
