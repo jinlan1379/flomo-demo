@@ -68,4 +68,31 @@ export const api = {
   scan() {
     return request('POST', '/scan');
   },
+
+  // Notes
+  getNotes(params = {}) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null && v !== '') qs.set(k, v);
+    }
+    const query = qs.toString();
+    return request('GET', `/notes${query ? `?${query}` : ''}`);
+  },
+  createNote(body) {
+    return request('POST', '/notes', body);
+  },
+  updateNote(id, body) {
+    return request('PATCH', `/notes/${id}`, body);
+  },
+  deleteNote(id) {
+    return request('DELETE', `/notes/${id}`);
+  },
+
+  // Note Tags
+  addNoteTags(noteId, tags) {
+    return request('POST', `/notes/${noteId}/tags`, { tags });
+  },
+  removeNoteTag(noteId, tag) {
+    return request('DELETE', `/notes/${noteId}/tags/${encodeURIComponent(tag)}`);
+  },
 };
