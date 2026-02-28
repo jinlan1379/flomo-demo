@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createServer } from 'http';
-import { app, notes, noteTags, resetNoteStore } from '../../server.js';
+import { app, noteTags, resetNoteStore } from '../../server.js';
 
 let server;
 let base;

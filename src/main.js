@@ -132,16 +132,6 @@ export function setNoteTagFilter(tag) {
   renderNoteTagSidebar();
 }
 
-async function addTagToNote(noteId, tag) {
-  await api.addNoteTags(noteId, [tag]);
-  await Promise.all([loadNotes(), loadNoteTags()]);
-}
-
-async function removeTagFromNote(noteId, tag) {
-  await api.removeNoteTag(noteId, tag);
-  await Promise.all([loadNotes(), loadNoteTags()]);
-}
-
 // --- View switching ---
 
 export function setView(view) {
@@ -149,8 +139,6 @@ export function setView(view) {
 
   const galleryContainer = document.getElementById('gallery-container');
   const notesContainer = document.getElementById('notes-container');
-  const sidebarEl = document.getElementById('sidebar');
-
   if (view === 'notes') {
     galleryContainer?.classList.add('hidden');
     notesContainer?.classList.remove('hidden');

@@ -85,7 +85,7 @@ async function init() {
   }
 }
 
-async function exec(sql, params = []) {
+async function exec(sql, _params = []) {
   const rows = [];
   const columns = [];
   await SQLite.exec(db, sql, (row, col) => {
