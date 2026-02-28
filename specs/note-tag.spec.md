@@ -43,3 +43,4 @@ Note {
 ## Non-Functional Requirements
 - Tag lookup and filtering should complete within 100 ms for up to 10,000 notes.
 - Tag names are stored lowercase; display as entered by user.
+
